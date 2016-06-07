@@ -5,7 +5,6 @@ import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.junit.{Before, Test}
-import org.apache.spark.sql.functions._
 
 /**
   * Created by Christian on 05.06.2016.
@@ -21,9 +20,7 @@ object TitanicBayesTest {
 
 
   def main(args: Array[String]) {
-    val conf = new SparkConf().setAppName("TrendyWords_" + System.currentTimeMillis())
-    conf.set("spark.executor.memory", "4G")
-    conf.set("spark.executor.cores", "4")
+    val conf = new SparkConf().setAppName("Naive_bayes_titanic")
     conf.set("spark.master", "local[4]")
     conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
     conf.set("spark.kryoserializer.buffer.max", "512m")
@@ -40,12 +37,12 @@ object TitanicBayesTest {
 
     // Get statistics about Fare and Age
     val statsDf = df.map { row =>
-      Vectors.dense(row.getAs("Fare"), row.getAs("Age"))
+      Vectors.dense(row.getAs("Fare"), row.getAs("Age"), row.getAs("Age"))
     }
     val summary: MultivariateStatisticalSummary = Statistics.colStats(statsDf)
 
-    val meanFare =  summary.mean(0)
-    val meanAge =  summary.mean(1)
+    val meanFare = summary.mean(0)
+    val meanAge = summary.mean(1)
 
     // Define udfs, which fill in mean values, if the data has no entry
     val normFare = udf((d: String) => d match {
@@ -58,8 +55,26 @@ object TitanicBayesTest {
       case s => Some(s.toDouble)
     })
 
+    val normSex = udf((d: String) => d match {
+      case null => None
+      case s => {
+        if (s.equals("male")) Some(0)
+        else Some(1)
+      }
+    })
+
+    val normEmbarked = udf((d: String) => d match {
+      case null => None
+      case s => {
+        if (s.equals("S")) Some(0)
+        else if (s.equals("C")) Some(1)
+        else Some(2)
+      }
+    })
+
     // select the columns we need and apply the udfs
-    val preprocessed = df.select(df("Survived"), normFare(df("Fare")).alias("Fare"), normAge(df("Age")).alias("Age"), df("Pclass"))
+    val preprocessed = df.select(df("Survived"), normFare(df("Fare")).alias("Fare"), normSex(df("Sex")).alias("Sex"),
+      normAge(df("Age")).alias("Age"), df("Pclass"), df("Parch"), df("SibSp"), normEmbarked(df("Embarked")).alias("Embarked"))
 
     // Create a Model
     TitanicBayes.train(preprocessed)
@@ -71,8 +86,10 @@ object TitanicBayesTest {
       .option("inferSchema", "true") // Automatically infer data types
       .load("src/main/resources/titanic_data/test.csv")
 
+    val input = testDf.select(testDf("PassengerId"), testDf("Fare"), normSex(testDf("Sex")).alias("Sex"),
+      testDf("Age"), testDf("Pclass"), testDf("Parch"), testDf("SibSp"), normEmbarked(testDf("Embarked")).alias("Embarked"))
     // Get predictions from the model
-    val result = TitanicBayes.predict(testDf)
+    val result = TitanicBayes.predict(input)
 
     // convert the RDD to Dataframe and save the Data to Disk
     val customSchema = StructType(Array(
@@ -87,7 +104,7 @@ object TitanicBayesTest {
       .write
       .format("com.databricks.spark.csv")
       .option("header", "true")
-      .save("results/out_" + System.currentTimeMillis())
+      .save("results/all_mean" + System.currentTimeMillis())
 
 
   }
