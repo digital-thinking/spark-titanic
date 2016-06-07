@@ -1,4 +1,4 @@
-import org.apache.spark.mllib.classification.{SVMModel, SVMWithSGD}
+import org.apache.spark.mllib.classification.{LogisticRegressionWithLBFGS, SVMModel, SVMWithSGD}
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.mllib.stat.MultivariateStatisticalSummary
@@ -71,7 +71,13 @@ object SVMTest {
     }
 
     //scaledData.saveAsTextFile("results/vectors")
-    val model: SVMModel = SVMWithSGD.train(scaledData, 500)
+    val model: SVMModel = SVMWithSGD.train(scaledData, 100)
+    //val naiveBayesModel = NaiveBayes.train(scaledData, lambda = 1.0, modelType = "multinomial")
+    val lrmodel = new LogisticRegressionWithLBFGS()
+      .setNumClasses(2)
+      .run(scaledData)
+
+
 
     val validationDf: DataFrame = InOutUtil.getValidationDf(sqlContext)
 
@@ -83,7 +89,24 @@ object SVMTest {
       Row.fromTuple((row.getAs[Int]("PassengerId"), result.toInt))
     }
 
-    InOutUtil.saveResult("SVM_scaled_all", sqlContext, resultRDD)
+    val resultRDDLR = validationDf.map { row =>
+      val pclassFlat: (Double, Double, Double) = flattenPclass(row.getAs[Int]("Pclass"))
+      val embarkedFlat: (Double, Double, Double) = flattenEmbarked(row.getAs[Int]("Embarked"))
+      val denseVecor = getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), summary)
+      val result = lrmodel.predict(denseVecor)
+      Row.fromTuple((row.getAs[Int]("PassengerId"), result.toInt))
+    }
+
+    /*val resultRDDBayes = validationDf.map { row =>
+      val pclassFlat: (Double, Double, Double) = flattenPclass(row.getAs[Int]("Pclass"))
+      val embarkedFlat: (Double, Double, Double) = flattenEmbarked(row.getAs[Int]("Embarked"))
+      val denseVecor = getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), summary)
+      val result = naiveBayesModel.predict(denseVecor)
+      Row.fromTuple((row.getAs[Int]("PassengerId"), result.toInt))    }*/
+
+    InOutUtil.saveResult("SVM_final", sqlContext, resultRDD)
+    InOutUtil.saveResult("LogisticRegression", sqlContext, resultRDDLR)
+    //InOutUtil.saveResult("SVM_bayes", sqlContext, resultRDDBayes)
 
 
   }
