@@ -1,3 +1,4 @@
+import org.apache.spark.mllib.feature.StandardScalerModel
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.stat.{MultivariateStatisticalSummary, Statistics}
 import org.apache.spark.rdd.RDD
@@ -8,7 +9,53 @@ import org.apache.spark.sql.{DataFrame, Row, SQLContext}
 /**
   * Created by Christian on 06.06.2016.
   */
-object InOutUtil {
+object Util {
+
+
+  def flattenPclass(value: Double): (Double, Double, Double) = {
+    if (value == 1)
+      (1, 0, 0)
+    else if (value == 2)
+      (0, 1, 0)
+    else (0, 0, 1)
+  }
+
+
+  def flattenEmbarked(value: Double): (Double, Double, Double) = {
+    if (value == 0)
+      (1, 0, 0)
+    else if (value == 1)
+      (0, 1, 0)
+    else (0, 0, 1)
+  }
+
+  def flattenSex(value: Double): (Double, Double) = {
+    if (value == 0)
+      (1, 0)
+    else (0, 1)
+  }
+
+  def scaleValue(min: Double, max: Double, value: Double): Double = {
+    (value - min) / max - min
+  }
+
+  def getScaledVector(fare: Double, age: Double, pclass: Double, sex: Double, embarked: Double, scaler: StandardScalerModel): org.apache.spark.mllib.linalg.Vector = {
+    val scaledContinous = scaler.transform(Vectors.dense(fare, age))
+    val pclassFlat: (Double, Double, Double) = flattenPclass(pclass)
+    val embarkedFlat: (Double, Double, Double) = flattenEmbarked(embarked)
+    val sexFlat: (Double, Double) = flattenSex(sex)
+    Vectors.dense(
+      scaledContinous(0),
+      scaledContinous(1),
+      sexFlat._1,
+      sexFlat._2,
+      pclassFlat._1,
+      pclassFlat._2,
+      pclassFlat._3,
+      embarkedFlat._1,
+      embarkedFlat._2,
+      embarkedFlat._3)
+  }
 
   val normSex = udf((d: String) => d match {
     case null => None

@@ -19,50 +19,9 @@ object SVMTest {
     System.setProperty("hadoop.home.dir", "C:\\Users\\Christian\\Dev\\hadoop-2.6.0")
   }
 
-  def flattenPclass(value: Double): (Double, Double, Double) = {
-    if (value == 1)
-      (1, 0, 0)
-    else if (value == 2)
-      (0, 1, 0)
-    else (0, 0, 1)
-  }
 
 
-  def flattenEmbarked(value: Double): (Double, Double, Double) = {
-    if (value == 0)
-      (1, 0, 0)
-    else if (value == 1)
-      (0, 1, 0)
-    else (0, 0, 1)
-  }
 
-  def flattenSex(value: Double): (Double, Double) = {
-    if (value == 0)
-      (1, 0)
-    else (0, 1)
-  }
-
-  def scaleValue(min: Double, max: Double, value: Double): Double = {
-    (value - min) / max - min
-  }
-
-  def getScaledVector(fare: Double, age: Double, pclass: Double, sex: Double, embarked: Double, scaler: StandardScalerModel): org.apache.spark.mllib.linalg.Vector = {
-    val scaledContinous = scaler.transform(Vectors.dense(fare, age))
-    val pclassFlat: (Double, Double, Double) = flattenPclass(pclass)
-    val embarkedFlat: (Double, Double, Double) = flattenEmbarked(embarked)
-    val sexFlat: (Double, Double) = flattenSex(sex)
-    Vectors.dense(
-      scaledContinous(0),
-      scaledContinous(1),
-      sexFlat._1,
-      sexFlat._2,
-      pclassFlat._1,
-      pclassFlat._2,
-      pclassFlat._3,
-      embarkedFlat._1,
-      embarkedFlat._2,
-      embarkedFlat._3)
-  }
 
   def main(args: Array[String]) {
     val conf = new SparkConf().setAppName("Naive_bayes_titanic")
@@ -72,16 +31,19 @@ object SVMTest {
     val sc = new SparkContext(conf)
     val sqlContext = new SQLContext(sc)
 
-    val trainingDf: DataFrame = InOutUtil.getTrainingDf(sqlContext, true)
+    val trainingDf: DataFrame = Util.getTrainingDf(sqlContext, true)
 
-    val summary = InOutUtil.summary
+    val r = scala.util.Random
+    trainingDf.rdd.keyBy(_.getAs("IP").toString).map{case (key, value) => (key+r.nextInt(10), value)}
+
+    val summary = Util.summary
     val stddev = Vectors.dense(math.sqrt(summary.variance(0)), math.sqrt(summary.variance(1)))
     val mean = Vectors.dense(summary.mean(0), summary.mean(1))
     val scaler = new StandardScalerModel(stddev, mean)
 
     val scaledData = trainingDf.map { row =>
       LabeledPoint(row.getAs[Int]("Survived"),
-        getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), scaler))
+        Util.getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), scaler))
     }
 
     val pca = new PCA(scaledData.first().features.size).fit(scaledData.map(_.features))
@@ -96,12 +58,10 @@ object SVMTest {
 //      .setNumClasses(2)
 //      .run(scaledData)
 
-    val validationDf: DataFrame = InOutUtil.getValidationDf(sqlContext)
+    val validationDf: DataFrame = Util.getValidationDf(sqlContext)
 
     val resultRDD = validationDf.map { row =>
-      val pclassFlat: (Double, Double, Double) = flattenPclass(row.getAs[Int]("Pclass"))
-      val embarkedFlat: (Double, Double, Double) = flattenEmbarked(row.getAs[Int]("Embarked"))
-      val denseVecor = getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), scaler)
+      val denseVecor = Util.getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), scaler)
       val pcaVector = pca.transform(denseVecor)
       val result = model.predict(pcaVector)
       Row.fromTuple((row.getAs[Int]("PassengerId"), result.toInt))
@@ -122,7 +82,7 @@ object SVMTest {
       val result = naiveBayesModel.predict(denseVecor)
       Row.fromTuple((row.getAs[Int]("PassengerId"), result.toInt))    }*/
 
-    InOutUtil.saveResult("SVM_pca", sqlContext, resultRDD)
+    Util.saveResult("SVM_pca", sqlContext, resultRDD)
     //InOutUtil.saveResult("LogisticRegression", sqlContext, resultRDDLR)
     //InOutUtil.saveResult("SVM_bayes", sqlContext, resultRDDBayes)
 

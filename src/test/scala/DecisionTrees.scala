@@ -1,6 +1,6 @@
+import org.apache.spark.mllib.feature.StandardScalerModel
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.mllib.stat.MultivariateStatisticalSummary
 import org.apache.spark.mllib.tree.configuration.BoostingStrategy
 import org.apache.spark.mllib.tree.{GradientBoostedTrees, RandomForest}
 import org.apache.spark.sql.{DataFrame, Row, SQLContext}
@@ -18,19 +18,11 @@ object DecisionTrees {
   def prepare(): Unit = {
     System.setProperty("hadoop.home.dir", "C:\\Users\\Christian\\Dev\\hadoop-2.6.0")
   }
+
   def scaleValue(min: Double, max: Double, value: Double): Double = {
     (value - min) / max - min
   }
 
-  def getScaledVector(fare: Double, age: Double, pclass: Double, sex: Double, embarked: Double, summary: MultivariateStatisticalSummary): org.apache.spark.mllib.linalg.Vector = {
-    Vectors.dense(
-      scaleValue(summary.min(0), summary.max(0), fare),
-      scaleValue(summary.min(1), summary.max(1), age),
-      pclass - 1,
-      sex,
-      embarked
-    )
-  }
 
   def main(args: Array[String]) {
     val conf = new SparkConf().setAppName("Naive_bayes_titanic")
@@ -40,59 +32,42 @@ object DecisionTrees {
     val sc = new SparkContext(conf)
     val sqlContext = new SQLContext(sc)
 
-    val trainingDf: DataFrame = InOutUtil.getTrainingDf(sqlContext, true)
-    val summary = InOutUtil.summary
+    val trainingDf: DataFrame = Util.getTrainingDf(sqlContext, true)
+    val summary = Util.summary
+    val stddev = Vectors.dense(math.sqrt(summary.variance(0)), math.sqrt(summary.variance(1)))
+    val mean = Vectors.dense(summary.mean(0), summary.mean(1))
+    val scaler = new StandardScalerModel(stddev, mean)
 
     val scaledData = trainingDf.map { row =>
       LabeledPoint(row.getAs[Int]("Survived"),
-        getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), summary))
+        Util.getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), scaler))
     }
 
     val numClasses = 2
-    val categoricalFeaturesInfo = Map[Int, Int]((2, 3), (3, 2), (4, 3))
-    val numTrees = 100
-    val featureSubsetStrategy = "all"
-    val impurity = "entropy"
-    val maxDepth = 5
-    val maxBins = 200
+    //val categoricalFeaturesInfo = Map[Int, Int]((2, 3), (3, 2), (4, 3))
+    val categoricalFeaturesInfo = Map[Int, Int]()
+    val numTrees = 96
+    val featureSubsetStrategy = "auto"
+    val impurity = "gini"
+    val maxDepth = 4
+    val maxBins = 100
 
     val model = RandomForest.trainClassifier(scaledData, numClasses, categoricalFeaturesInfo,
       numTrees, featureSubsetStrategy, impurity, maxDepth, maxBins)
     //scaledData.saveAsTextFile("results/vectors")
 
 
-    // GradientBoosted
-    val boostingStrategy = BoostingStrategy.defaultParams("Classification")
-    boostingStrategy.numIterations = 10 // Note: Use more iterations in practice.
-    boostingStrategy.treeStrategy.maxDepth = 5
-    boostingStrategy.treeStrategy.numClasses = 2
-    boostingStrategy.treeStrategy.maxBins = 200
-    // Empty categoricalFeaturesInfo indicates s features are continuous.
-    boostingStrategy.treeStrategy.categoricalFeaturesInfo = categoricalFeaturesInfo
-
-    val model2 = GradientBoostedTrees.train(scaledData, boostingStrategy)
-
-
-    val validationDf: DataFrame = InOutUtil.getValidationDf(sqlContext)
+    val validationDf: DataFrame = Util.getValidationDf(sqlContext)
 
     val resultRDD = validationDf.map { row =>
-      val pclassFlat: (Double, Double, Double) = SVMTest.flattenPclass(row.getAs[Int]("Pclass"))
-      val embarkedFlat: (Double, Double, Double) = SVMTest.flattenEmbarked(row.getAs[Int]("Embarked"))
-      val denseVecor = getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), summary)
+      val denseVecor = Util.getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), scaler)
       val result = model.predict(denseVecor)
       Row.fromTuple((row.getAs[Int]("PassengerId"), result.toInt))
     }
 
-    val resultRDD2 = validationDf.map { row =>
-      val pclassFlat: (Double, Double, Double) = SVMTest.flattenPclass(row.getAs[Int]("Pclass"))
-      val embarkedFlat: (Double, Double, Double) = SVMTest.flattenEmbarked(row.getAs[Int]("Embarked"))
-      val denseVecor = getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), summary)
-      val result = model2.predict(denseVecor)
-      Row.fromTuple((row.getAs[Int]("PassengerId"), result.toInt))
-    }
 
-    InOutUtil.saveResult("RandomForest", sqlContext, resultRDD)
-    InOutUtil.saveResult("GradientBoostedTrees", sqlContext, resultRDD2)
+
+    Util.saveResult("RandomForest", sqlContext, resultRDD)
 
 
   }
