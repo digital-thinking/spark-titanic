@@ -13,7 +13,7 @@ import org.junit.{Before, Test}
 
 
 @Test
-object DecisionTrees {
+object GradientBoostedTest {
   @Before
   def prepare(): Unit = {
     System.setProperty("hadoop.home.dir", "C:\\Users\\Christian\\Dev\\hadoop-2.6.0")
@@ -43,17 +43,14 @@ object DecisionTrees {
         Util.getScaledVector(row.getAs[Double]("Fare"), row.getAs[Double]("Age"), row.getAs[Int]("Pclass"), row.getAs[Int]("Sex"), row.getAs[Int]("Embarked"), scaler))
     }
 
-    val numClasses = 2
-    //val categoricalFeaturesInfo = Map[Int, Int]((2, 3), (3, 2), (4, 3))
-    val categoricalFeaturesInfo = Map[Int, Int]()
-    val numTrees = 96
-    val featureSubsetStrategy = "auto"
-    val impurity = "gini"
-    val maxDepth = 4
-    val maxBins = 100
+    val boostingStrategy = BoostingStrategy.defaultParams("Classification")
+    boostingStrategy.numIterations = 10
+    boostingStrategy.treeStrategy.numClasses = 2
+    boostingStrategy.treeStrategy.maxDepth = 6
+    // Empty categoricalFeaturesInfo indicates all features are continuous.
+    boostingStrategy.treeStrategy.categoricalFeaturesInfo = Map[Int, Int]()
 
-    val model = RandomForest.trainClassifier(scaledData, numClasses, categoricalFeaturesInfo,
-      numTrees, featureSubsetStrategy, impurity, maxDepth, maxBins)
+    val model = GradientBoostedTrees.train(scaledData, boostingStrategy)
     //scaledData.saveAsTextFile("results/vectors")
 
 
@@ -67,7 +64,7 @@ object DecisionTrees {
 
 
 
-    Util.saveResult("RandomForest", sqlContext, resultRDD)
+    Util.saveResult("GradientBoosted", sqlContext, resultRDD)
 
 
   }
