@@ -47,14 +47,14 @@ object NeuralNetworkTest {
     }
     val data: DataFrame = scaledData.toDF("label", "features")
 
-    val layers = Array[Int](10, 8, 7, 4, 2)
+    val layers = Array[Int](10, 1, 2)
     // create the trainer and set its parameters
     val trainer = new MultilayerPerceptronClassifier()
       .setLayers(layers)
-      .setBlockSize(128)
+      .setBlockSize(64)
       .setSeed(1234L)
-      .setTol(1E-6)
-      .setMaxIter(500)
+      .setTol(1E-4)
+      .setMaxIter(1000)
 
     val model = trainer.fit(data)
     //scaledData.saveAsTextFile("results/vectors")
